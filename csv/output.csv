@@ -1,0 +1,13 @@
+method,input_size,time_ms
+sequential,10000,0.736875
+std_thread,10000,0.759084
+openmp,10000,1.50867
+cuda,10000,N/A
+sequential,100000,11.5099
+std_thread,100000,2.62342
+openmp,100000,4.32008
+cuda,100000,N/A
+sequential,1000000,113.452
+std_thread,1000000,39.4803
+openmp,1000000,60.7854
+cuda,1000000,N/A
