@@ -1,25 +1,39 @@
-// cuda.cu – CUDA implementation of Merge Sort on Singly Linked List
-// Strategy:
-//   1. Walk the list and copy values into a host array  (O(n))
-//   2. Transfer array to device                          (H->D)
-//   3. Bottom-up merge sort entirely on the GPU
-//   4. Transfer sorted array back to host               (D->H)
-//   5. Write values back to the existing list nodes     (O(n))
-//
-// This keeps the linked-list interface intact while exploiting
-// GPU parallelism for the sort itself.
+/*
+ * cuda.cu  –  GPU merge sort (bottom-up, array-based)
+ *
+ * Lec6 – GPU Architecture & CUDA Programming:
+ *   Linked list нь pointer-р холбогдсон тул GPU-д шууд ашиглах
+ *   боломжгүй (адресс тооцоолол хэт нарийн). Иймд:
+ *     1) List-ийн утгуудыг host array-д хуулна
+ *     2) cudaMemcpy-р device руу илгээнэ   (H->D)
+ *     3) Bottom-up merge sort kernel-г ажиллуулна
+ *     4) Эрэмбэлэгдсэн array-г host руу хуулна  (D->H)
+ *     5) Утгуудыг list node-уудад буцааж бичнэ
+ *
+ * Kernel загвар (Lec6: thread hierarchy):
+ *   - Grid  : (pairs + BLOCK - 1) / BLOCK blocks
+ *   - Block : BLOCK = 256 threads
+ *   - Thread: нэг merge pair-г хариуцна
+ *
+ * Тайлбар хэмжилтүүд (h2d_ms, kernel_ms, d2h_ms) нь тайланд
+ * "Data transfer time" болон "Achievable performance"-ыг тооцоолоход
+ * ашиглагдана.
+ */
 
 #include "tasksys.h"
 #include <cuda_runtime.h>
+#include <chrono>
 #include <cstdio>
-#include <cstdlib>
 
-// -----------------------------------------------------------
-// Device helper: merge two adjacent sorted runs in-place
-//   arr[left .. mid-1]  and  arr[mid .. right-1]
-//   result written to temp, then copied back to arr
-// -----------------------------------------------------------
-__device__ void deviceMerge(int* arr, int* temp, int left, int mid, int right) {
+using hrc = std::chrono::high_resolution_clock;
+using ms  = std::chrono::duration<double, std::milli>;
+
+// ---------------------------------------------------------------
+// Device function: arr[left..mid-1] ба arr[mid..right-1]-г нэгтгэнэ
+// Үр дүнг temp-д бичиж, arr руу хуулна
+// ---------------------------------------------------------------
+__device__ static void deviceMerge(int* arr, int* temp,
+                                    int left, int mid, int right) {
     int i = left, j = mid, k = left;
 
     while (i < mid && j < right) {
@@ -29,72 +43,89 @@ __device__ void deviceMerge(int* arr, int* temp, int left, int mid, int right) {
     while (i < mid)   temp[k++] = arr[i++];
     while (j < right) temp[k++] = arr[j++];
 
-    // Write merged result back to arr
-    for (int x = left; x < right; x++) arr[x] = temp[x];
+    for (int x = left; x < right; x++)
+        arr[x] = temp[x];
 }
 
-// -----------------------------------------------------------
-// Kernel: each thread handles one pair of adjacent runs
-//   width – current sub-array half-width (1, 2, 4, 8, …)
-// -----------------------------------------------------------
+// ---------------------------------------------------------------
+// Kernel: bottom-up merge sort-ын нэг давхрага
+//   width – одоогийн sub-array-ийн хагас урт (1, 2, 4, 8, ...)
+//   Нэг thread нэг merge хийнэ.
+// ---------------------------------------------------------------
 __global__ void mergeSortKernel(int* arr, int* temp, int n, int width) {
-    int tid  = blockIdx.x * blockDim.x + threadIdx.x;
-    int left = tid * 2 * width;
+    int tid   = blockIdx.x * blockDim.x + threadIdx.x;
+    int left  = tid * 2 * width;
 
     if (left >= n) return;
 
-    int mid   = min(left + width,         n);
-    int right = min(left + 2 * width,     n);
+    int mid   = min(left + width,     n);
+    int right = min(left + 2 * width, n);
 
-    if (mid < right)   // there is actually a right run to merge
+    if (mid < right)
         deviceMerge(arr, temp, left, mid, right);
 }
 
-// -----------------------------------------------------------
+// ---------------------------------------------------------------
 // TaskSystemCUDA::sort
-// -----------------------------------------------------------
+// ---------------------------------------------------------------
 Node* TaskSystemCUDA::sort(Node* head) {
-    // Count nodes
+    // Нийт node тоолох
     int n = 0;
-    for (Node* p = head; p; p = p->next) n++;
+    for (Node* p = head; p != nullptr; p = p->next)
+        n++;
+
     if (n <= 1) return head;
 
-    // Linearise linked list -> host array
+    // List-ийн утгуудыг host array-д хуулах
     int* h_arr = new int[n];
     {
         Node* p = head;
-        for (int i = 0; i < n; i++, p = p->next) h_arr[i] = p->val;
+        for (int i = 0; i < n; i++, p = p->next)
+            h_arr[i] = p->val;
     }
 
-    // Allocate device buffers
+    // Device санах ой захиалах
     int* d_arr  = nullptr;
     int* d_temp = nullptr;
     cudaMalloc(reinterpret_cast<void**>(&d_arr),  n * sizeof(int));
     cudaMalloc(reinterpret_cast<void**>(&d_temp), n * sizeof(int));
 
-    // Copy data host -> device
+    // --- Host -> Device дамжуулалт (хугацааг хэмжинэ) ----------
+    auto t0 = hrc::now();
     cudaMemcpy(d_arr, h_arr, n * sizeof(int), cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
+    auto t1 = hrc::now();
+    h2d_ms = ms(t1 - t0).count();
 
-    // Bottom-up merge sort on the GPU
+    // --- GPU kernel: bottom-up merge sort -----------------------
+    // Lec6: block size 256 = 8 warp, SM-д дор хаяж нэг block байна
     const int BLOCK = 256;
+
+    auto t2 = hrc::now();
     for (int width = 1; width < n; width *= 2) {
-        // Number of merge pairs needed
         int pairs    = (n + 2 * width - 1) / (2 * width);
         int gridSize = (pairs + BLOCK - 1) / BLOCK;
         mergeSortKernel<<<gridSize, BLOCK>>>(d_arr, d_temp, n, width);
-        cudaDeviceSynchronize();
     }
+    cudaDeviceSynchronize();
+    auto t3 = hrc::now();
+    kernel_ms = ms(t3 - t2).count();
 
-    // Copy sorted data device -> host
+    // --- Device -> Host дамжуулалт (хугацааг хэмжинэ) ----------
+    auto t4 = hrc::now();
     cudaMemcpy(h_arr, d_arr, n * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
+    auto t5 = hrc::now();
+    d2h_ms = ms(t5 - t4).count();
 
     cudaFree(d_arr);
     cudaFree(d_temp);
 
-    // Write sorted values back into the existing list nodes
+    // Эрэмбэлэгдсэн утгуудыг list node-уудад буцааж бичнэ
     {
         Node* p = head;
-        for (int i = 0; i < n; i++, p = p->next) p->val = h_arr[i];
+        for (int i = 0; i < n; i++, p = p->next)
+            p->val = h_arr[i];
     }
 
     delete[] h_arr;
