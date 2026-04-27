@@ -1,7 +1,7 @@
 #pragma once
 #include "itasksys.h"
 
-void reset_array(const float* base_array, float* sorting_array, int array_size);
+void reset_array(float* base_array, float* sorting_array, int array_size);
 
 class TaskSystemSerial : public TaskSystem {
 public:
