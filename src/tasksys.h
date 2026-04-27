@@ -2,6 +2,8 @@
 #include "itasksys.h"
 
 void reset_array(float* base_array, float* sorting_array, int array_size);
+void merge_sort(float* array, int array_size);
+void merge(float* leftArray, float* rightArray, float* array, int array_size);
 
 class TaskSystemSerial : public TaskSystem {
 public:
