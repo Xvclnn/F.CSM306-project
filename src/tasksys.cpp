@@ -71,8 +71,21 @@ void merge_sort_serial(float* array, int array_size) {
 
 
 static int co_rank(int k, float* leftArray, int leftArray_size, float* rightArray, int rightArray_size){
-    int low  = (k > rightArray_size) ? k - rightArray_size : 0;
-    int high = (k < leftArray_size)  ? k : leftArray_size;
+    int low;
+    if (k > rightArray_size) {
+        low = k - rightArray_size;
+    }
+    else {
+        low = 0;
+    }
+    
+    int high;
+    if (k < leftArray_size) {
+        high = k;
+    }
+    else {
+        high = leftArray_size;
+    }
 
     while (low <= high){
         int i = (low+high)/2;
@@ -134,11 +147,11 @@ static void merge_sort_parallel(float* array, int array_size, int NUM_THREADS){
     int leftArray_size  = array_size / 2;
     int rightArray_size = array_size - leftArray_size;
 
-    float* leftArray  = (float*)malloc(leftArray_size  * sizeof(float));
+    float* leftArray = (float*)malloc(leftArray_size * sizeof(float));
     float* rightArray = (float*)malloc(rightArray_size * sizeof(float));
 
-    memcpy(leftArray,  array,                  leftArray_size  * sizeof(float));
-    memcpy(rightArray, array + leftArray_size, rightArray_size * sizeof(float));
+    memcpy(leftArray, array, leftArray_size*sizeof(float));
+    memcpy(rightArray, array+leftArray_size, rightArray_size*sizeof(float));
 
     int left_threads  = NUM_THREADS / 2;
     int right_threads = NUM_THREADS - left_threads;
@@ -149,7 +162,7 @@ static void merge_sort_parallel(float* array, int array_size, int NUM_THREADS){
     left_thread.join();
     right_thread.join();
 
-    merge_parallel_corank(leftArray,  leftArray_size, rightArray, rightArray_size, array, NUM_THREADS);
+    merge_parallel_corank(leftArray, leftArray_size, rightArray, rightArray_size, array, NUM_THREADS);
 
     free(leftArray);
     free(rightArray);
