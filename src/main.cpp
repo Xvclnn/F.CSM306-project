@@ -4,7 +4,19 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 
+static void checker(float* array, int array_size){
+    for(int i = 0; i<array_size-1; i++) {
+        if (array_size <= 1) return;
+        if(array[i] <= array[i+1]) {
+            continue;
+        }
+        else {
+            throw std::runtime_error("Array бүрэн дараалалд ороогүй байна.");
+        }
+    }
+}
 
 int main() {
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
@@ -25,15 +37,28 @@ int main() {
         }
         memcpy(sorting_array, base_array, array_size * sizeof(float));
 
-
+        //Serial-n test
         {
             TaskSystemSerial sys;
             reset_array(base_array, sorting_array, array_size);
             auto start = std::chrono::high_resolution_clock::now();
             sys.run_sort(1, sorting_array, array_size);
             auto end = std::chrono::high_resolution_clock::now();
+            checker(sorting_array, array_size);
             long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         }
+
+
+
+
+
+
+
+
+
+
+
+        
         free(sorting_array);
         free(base_array);
     }

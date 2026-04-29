@@ -9,7 +9,7 @@ void reset_array(float* base_array, float* sorting_array, int array_size){
     memcpy(sorting_array, base_array, array_size * sizeof(float));
 }
 
-//
+// Хуваагдсан баруун зүүн хоёр жагсаалтыг авч буцаад merge хйинэ.
 static void merge(float* leftArray, float* rightArray, float* array, int array_size){
     int leftArray_size = array_size/2;
     int rightArray_size = array_size - leftArray_size;
@@ -38,7 +38,8 @@ static void merge(float* leftArray, float* rightArray, float* array, int array_s
         r++; 
     }
 }
-
+// Жагсаалтын хэмжээ 1 болох хүртэл жагсаалтыг мод хэлбэрээр задлаж дараах үйлдлийг хийнэ:
+// Өгөгдсөн жагсаалтыг баруун зүүн хоёр хэсэгт хувааж merge() функц уруу дамжуулна. 
 void merge_sort(float* array, int array_size) {
     if(array_size <= 1) {
         return; //Хэрэв жагсаалтын хэмжээ нэг болон түүнээс бага болсон тохиолдолд recursive байдлыг зогсоох
@@ -61,13 +62,12 @@ void merge_sort(float* array, int array_size) {
     merge_sort(leftArray, middle);
     merge_sort(rightArray, array_size-middle);
     merge(leftArray, rightArray, array, array_size);
-    
+
     free(leftArray);
     free(rightArray);
 }
 
 void TaskSystemSerial::run_sort(int NUM_THREADS, float* array, int array_size){
-    // a code that utilizes merge_sort to sort out the float* array in serially
     merge_sort(array, array_size);
 }
 
