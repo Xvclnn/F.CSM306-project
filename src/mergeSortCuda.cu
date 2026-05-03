@@ -2,6 +2,7 @@
 
 #include <cuda_runtime.h>
 
+#include <chrono>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -30,6 +31,11 @@ inline int normalize_threads_per_block(int requested_threads) {
     }
 
     return threads;
+}
+
+template <typename Duration>
+double to_milliseconds(Duration duration) {
+    return std::chrono::duration<double, std::milli>(duration).count();
 }
 
 __device__ __forceinline__ int min_int(int a, int b) {
@@ -137,58 +143,111 @@ __global__ void merge_pass_kernel(const float* input_array,
 
 }  // namespace
 
+TaskSystemCUDA::~TaskSystemCUDA() {
+    release_buffers();
+}
+
+void TaskSystemCUDA::release_buffers() {
+    if (device_input_ != nullptr) {
+        cudaFree(device_input_);
+        device_input_ = nullptr;
+    }
+    if (device_temp_ != nullptr) {
+        cudaFree(device_temp_);
+        device_temp_ = nullptr;
+    }
+    capacity_bytes_ = 0;
+}
+
+void TaskSystemCUDA::ensure_capacity(std::size_t bytes) {
+    if (bytes <= capacity_bytes_) {
+        return;
+    }
+
+    release_buffers();
+
+    check_cuda(cudaMalloc(&device_input_, bytes), "cudaMalloc(device_input_)");
+    try {
+        check_cuda(cudaMalloc(&device_temp_, bytes), "cudaMalloc(device_temp_)");
+    } catch (...) {
+        release_buffers();
+        throw;
+    }
+
+    capacity_bytes_ = bytes;
+}
+
+void TaskSystemCUDA::warm_up() {
+    if (warmed_up_) {
+        return;
+    }
+
+    int device_count = 0;
+    check_cuda(cudaGetDeviceCount(&device_count), "cudaGetDeviceCount");
+    if (device_count <= 0) {
+        throw std::runtime_error("No CUDA device detected.");
+    }
+
+    ensure_capacity(2 * sizeof(float));
+
+    const float warmup_input[2] = {1.0f, 0.0f};
+    check_cuda(cudaMemcpy(device_input_,
+                          warmup_input,
+                          sizeof(warmup_input),
+                          cudaMemcpyHostToDevice),
+               "cudaMemcpy warmup host to device");
+
+    merge_pass_kernel<<<1, 32>>>(device_input_, device_temp_, 2, 1);
+    check_cuda(cudaGetLastError(), "warmup merge_pass_kernel launch");
+    check_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize after warmup");
+
+    warmed_up_ = true;
+}
+
+const CudaRunMetrics& TaskSystemCUDA::last_metrics() const {
+    return last_metrics_;
+}
+
 void TaskSystemCUDA::run_sort(int num_threads, float* array, int array_size) {
+    last_metrics_ = {};
+
     if (array_size <= 1) {
         return;
     }
 
-    float* device_input = nullptr;
-    float* device_temp = nullptr;
+    warm_up();
 
-    auto cleanup = [&]() {
-        if (device_input != nullptr) {
-            cudaFree(device_input);
-            device_input = nullptr;
-        }
-        if (device_temp != nullptr) {
-            cudaFree(device_temp);
-            device_temp = nullptr;
-        }
-    };
+    const int threads_per_block = normalize_threads_per_block(num_threads);
+    const std::size_t bytes = static_cast<std::size_t>(array_size) * sizeof(float);
 
-    try {
-        int device_count = 0;
-        check_cuda(cudaGetDeviceCount(&device_count), "cudaGetDeviceCount");
-        if (device_count <= 0) {
-            throw std::runtime_error("No CUDA device detected.");
-        }
+    ensure_capacity(bytes);
 
-        const int threads_per_block = normalize_threads_per_block(num_threads);
-        const size_t bytes = static_cast<size_t>(array_size) * sizeof(float);
+    const auto transfer_to_device_start = std::chrono::steady_clock::now();
+    check_cuda(cudaMemcpy(device_input_, array, bytes, cudaMemcpyHostToDevice),
+               "cudaMemcpy host to device");
+    const auto kernel_start = std::chrono::steady_clock::now();
 
-        check_cuda(cudaMalloc(&device_input, bytes), "cudaMalloc(device_input)");
-        check_cuda(cudaMalloc(&device_temp, bytes), "cudaMalloc(device_temp)");
-        check_cuda(cudaMemcpy(device_input, array, bytes, cudaMemcpyHostToDevice),
-                   "cudaMemcpy host to device");
+    float* current_input = device_input_;
+    float* current_output = device_temp_;
 
-        float* current_input = device_input;
-        float* current_output = device_temp;
-
-        for (int width = 1; width < array_size; width *= 2) {
-            const int merges_in_pass = (array_size + (2 * width) - 1) / (2 * width);
-            merge_pass_kernel<<<merges_in_pass, threads_per_block>>>(
-                current_input, current_output, array_size, width);
-            check_cuda(cudaGetLastError(), "merge_pass_kernel launch");
-            std::swap(current_input, current_output);
-        }
-
-        check_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-        check_cuda(cudaMemcpy(array, current_input, bytes, cudaMemcpyDeviceToHost),
-                   "cudaMemcpy device to host");
-    } catch (...) {
-        cleanup();
-        throw;
+    for (int width = 1; width < array_size; width *= 2) {
+        const int merges_in_pass = (array_size + (2 * width) - 1) / (2 * width);
+        merge_pass_kernel<<<merges_in_pass, threads_per_block>>>(
+            current_input, current_output, array_size, width);
+        check_cuda(cudaGetLastError(), "merge_pass_kernel launch");
+        std::swap(current_input, current_output);
     }
 
-    cleanup();
+    check_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    const auto transfer_from_device_start = std::chrono::steady_clock::now();
+
+    check_cuda(cudaMemcpy(array, current_input, bytes, cudaMemcpyDeviceToHost),
+               "cudaMemcpy device to host");
+    const auto transfer_end = std::chrono::steady_clock::now();
+
+    last_metrics_.kernel_time_ms = to_milliseconds(transfer_from_device_start - kernel_start);
+    last_metrics_.data_transfer_time_ms =
+        to_milliseconds(kernel_start - transfer_to_device_start) +
+        to_milliseconds(transfer_end - transfer_from_device_start);
+    last_metrics_.data_transferred_bytes = 2 * bytes;
 }

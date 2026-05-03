@@ -30,13 +30,15 @@ def load_summary(csv_path: Path) -> pd.DataFrame:
         "num_threads",
         "run_id",
         "execution_time_ms",
+        "kernel_time_ms",
         "data_transfer_time",
         "data_transferred_bytes",
         "total_operations",
         "achievable_performance",
     ]
     for column in numeric_columns:
-        df[column] = pd.to_numeric(df[column], errors="coerce")
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
 
     df = df.dropna(subset=["method", "input_size", "execution_time_ms", "achievable_performance"])
 
