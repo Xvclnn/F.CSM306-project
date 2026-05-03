@@ -199,7 +199,7 @@ void TaskSystemThread::run_sort(int NUM_THREADS, float* array, int array_size){
     merge_sort_parallel(array, array_size, NUM_THREADS);
 }
 
-static void merge_parallel_corank_openmp(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array, int NUM_THREADS){
+void merge_parallel_corank_openmp(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array, int NUM_THREADS){
     int array_size = leftArray_size + rightArray_size;
 
     #pragma omp taskgroup
@@ -222,7 +222,7 @@ static void merge_parallel_corank_openmp(float* leftArray, int leftArray_size, f
     }
 }
 
-static void merge_sort_parallel_openmp(float* array, int array_size, int NUM_THREADS){
+void merge_sort_parallel_openmp(float* array, int array_size, int NUM_THREADS){
     if (array_size <= 10000 || NUM_THREADS <= 1){
         merge_sort_serial(array, array_size);
         return;
