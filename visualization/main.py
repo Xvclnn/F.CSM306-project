@@ -1,99 +1,130 @@
-"""
-visualization/main.py
-F.CSM306 – Дан холбоост жагсаалт дээрх нэгтгэх эрэмбэлэлт
-           Гүйцэтгэлийн харьцуулсан график
+from pathlib import Path
 
-Уншдаг файл : ./csv/output.csv
-Хадгалдаг   : ./output/a.png
-"""
-
-import os
-import sys
-import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
+import pandas as pd
 
-CSV_PATH = "./csv/output.csv"
-OUT_PATH = "./output/a.png"
 
-# --- CSV уншиж цэвэрлэнэ ----------------------------------------
-df = pd.read_csv(CSV_PATH)
+CSV_PATH = Path("csv/output.csv")
+OUTPUT_DIR = Path("output")
 
-# time_ms = 0 бол CUDA N/A гэж үзэж хасна (USE_CUDA compile хийгдээгүй)
-df = df[df["time_ms"] > 0].copy()
-df["time_ms"]  = pd.to_numeric(df["time_ms"],  errors="coerce")
-df["speedup"]  = pd.to_numeric(df["speedup"],  errors="coerce")
-df = df.dropna(subset=["time_ms", "speedup"])
-
-sizes   = sorted(df["input_size"].unique())
-methods = ["sequential", "std_thread", "openmp", "cuda"]
-
-COLORS = {
-    "sequential": "#e74c3c",
-    "std_thread": "#3498db",
-    "openmp":     "#27ae60",
-    "cuda":       "#f39c12",
+METHOD_ORDER = ["serial", "threads", "openmp"]
+METHOD_LABELS = {
+    "serial": "Serial",
+    "threads": "std::thread",
+    "openmp": "OpenMP",
 }
-LABELS = {
-    "sequential": "Sequential",
-    "std_thread": "std::thread",
-    "openmp":     "OpenMP",
-    "cuda":       "CUDA",
-}
-MARKERS = {
-    "sequential": "o",
-    "std_thread": "s",
-    "openmp":     "^",
-    "cuda":       "D",
+METHOD_COLORS = {
+    "serial": "#c0392b",
+    "threads": "#2980b9",
+    "openmp": "#27ae60",
 }
 
-# --- 2 subplot: Гүйцэтгэлийн хугацаа ба SpeedUp ----------------
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-fig.suptitle(
-    "Дан холбоост жагсаалт дээрх Merge Sort\n"
-    "Параллел хувилбаруудын харьцуулалт",
-    fontsize=13, fontweight="bold"
-)
 
-for method in methods:
-    sub = df[df["method"] == method].sort_values("input_size")
-    if sub.empty:
-        continue
-    kw = dict(marker=MARKERS[method], color=COLORS[method],
-               linewidth=2, markersize=7, label=LABELS[method])
+def load_summary(csv_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(csv_path, skipinitialspace=True)
 
-    # Зүүн: Execution time
-    ax1.plot(sub["input_size"], sub["time_ms"], **kw)
+    numeric_columns = [
+        "input_size",
+        "num_threads",
+        "run_id",
+        "execution_time_ms",
+        "data_transfer_time",
+        "data_transferred_bytes",
+        "total_operations",
+        "achievable_performance",
+    ]
+    for column in numeric_columns:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
 
-    # Баруун: SpeedUp (sequential = 1.0 суурь шугам)
-    if method != "sequential":
-        ax2.plot(sub["input_size"], sub["speedup"], **kw)
+    df = df.dropna(subset=["method", "input_size", "execution_time_ms", "achievable_performance"])
 
-# --- Зүүн axis (Execution time) ----------------------------------
-ax1.set_xscale("log")
-ax1.set_yscale("log")
-ax1.set_xlabel("Оролтын хэмжээ (элементийн тоо)", fontsize=11)
-ax1.set_ylabel("Гүйцэтгэлийн хугацаа (мс)", fontsize=11)
-ax1.set_title("Execution Time", fontsize=11)
-ax1.xaxis.set_major_formatter(
-    mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
-ax1.grid(True, which="both", linestyle="--", alpha=0.4)
-ax1.legend(fontsize=10)
+    summary = (
+        df.groupby(["method", "input_size"], as_index=False)
+        .agg(
+            execution_time_ms=("execution_time_ms", "mean"),
+            achievable_performance=("achievable_performance", "mean"),
+            num_threads=("num_threads", "first"),
+            runs=("run_id", "count"),
+        )
+        .sort_values(["input_size", "method"])
+    )
 
-# --- Баруун axis (SpeedUp) ----------------------------------------
-ax2.axhline(y=1.0, color="gray", linestyle="--", linewidth=1,
-            label="Sequential (суурь)")
-ax2.set_xscale("log")
-ax2.set_xlabel("Оролтын хэмжээ (элементийн тоо)", fontsize=11)
-ax2.set_ylabel("SpeedUp (T_seq / T_parallel)", fontsize=11)
-ax2.set_title("SpeedUp харьцуулалт", fontsize=11)
-ax2.xaxis.set_major_formatter(
-    mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
-ax2.grid(True, which="both", linestyle="--", alpha=0.4)
-ax2.legend(fontsize=10)
+    serial_times = (
+        summary[summary["method"] == "serial"][["input_size", "execution_time_ms"]]
+        .rename(columns={"execution_time_ms": "serial_execution_time_ms"})
+    )
+    summary = summary.merge(serial_times, on="input_size", how="left")
+    summary["speedup"] = summary["serial_execution_time_ms"] / summary["execution_time_ms"]
+    summary.loc[summary["method"] == "serial", "speedup"] = 1.0
 
-plt.tight_layout()
-os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-plt.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
-print(f"График хадгалагдлаа: {OUT_PATH}")
-plt.show()
+    return summary
+
+
+def style_axis(ax: plt.Axes, title: str, ylabel: str) -> None:
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Input Size")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, which="both", linestyle="--", alpha=0.35)
+    ax.legend()
+
+
+def plot_metric(summary: pd.DataFrame, column: str, title: str, ylabel: str, filename: str, baseline: float | None = None) -> None:
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    if baseline is not None:
+        ax.axhline(baseline, color="gray", linestyle="--", linewidth=1, label="Baseline")
+
+    for method in METHOD_ORDER:
+        method_rows = summary[summary["method"] == method].sort_values("input_size")
+        if method_rows.empty:
+            continue
+
+        ax.plot(
+            method_rows["input_size"],
+            method_rows[column],
+            marker="o",
+            linewidth=2,
+            color=METHOD_COLORS[method],
+            label=METHOD_LABELS[method],
+        )
+
+    style_axis(ax, title, ylabel)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / filename, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    summary = load_summary(CSV_PATH)
+
+    plot_metric(
+        summary,
+        column="execution_time_ms",
+        title="Хугацаа & Жагсаалтын хэмжээ",
+        ylabel="Зарцуулсан хугацаа (мс)",
+        filename="execution_time.png",
+    )
+    plot_metric(
+        summary,
+        column="speedup",
+        title="Speedup vs Жагсаалтын хэмжээ",
+        ylabel="Speedup",
+        filename="speedup.png",
+        baseline=1.0,
+    )
+    plot_metric(
+        summary,
+        column="achievable_performance",
+        title="Achievable Performance vs Жагсаалтын хэмжээ",
+        ylabel="Performance (op/s)",
+        filename="achievable_performance.png",
+    )
+
+    print(f"Saved plots to: {OUTPUT_DIR.resolve()}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,3 +1,5 @@
 .codex
 bin/
 .vscode/
+.DS_Store
+src/main
