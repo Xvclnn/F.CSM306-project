@@ -27,3 +27,16 @@ class TaskSystemOpenMP : public TaskSystem {
 public:
     void run_sort(int num_threads, float* array, int array_size) override;
 };
+
+#ifdef USE_CUDA
+// GPU дээр merge sort гүйцэтгэх класс.
+// Тус класс нь H2D + D2H дамжуулалтын хугацаа болон нийт байтыг
+// нэмэлтээр хэмжиж public талбарт хадгалдаг (CSV-д бичих зориулалттай).
+class TaskSystemCUDA : public TaskSystem {
+public:
+    double    data_transfer_time_ms  = 0.0;  // H2D + D2H нийт хугацаа (мс)
+    long long data_transferred_bytes = 0;    // нийт дамжсан байт
+
+    void run_sort(int num_threads, float* array, int array_size) override;
+};
+#endif

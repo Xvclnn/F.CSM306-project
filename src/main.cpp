@@ -95,13 +95,40 @@ int main() {
                 auto end = std::chrono::high_resolution_clock::now();
                 checker(sorting_array, array_size);
                 double execution_time = std::chrono::duration<double, std::milli>(end - start).count();
-        
+
                 double achievable_performance = total_operations / (execution_time / 1000.0);
 
                 printf("OpenMP, execution time: %.5f ms\n", execution_time);
                 printf("OpenMP, achievable performance: %lf op/s\n", achievable_performance);
                 fprintf(fp, "openmp,%d,%d,%d,%lf,0,0,%d, %lf\n", array_size, NUM_THREADS, run_id, execution_time, total_operations, achievable_performance);
-            }        
+            }
+
+#ifdef USE_CUDA
+            // CUDA (GPU) test hiine
+            // Анхаар: USE_CUDA макро тодорхойлогдсон үед л хөрвүүлэгдэнэ.
+            //   nvcc -DUSE_CUDA ... src/main.cpp src/tasksys.cpp src/cuda.cu
+            {
+                TaskSystemCUDA sys;
+                reset_array(base_array, sorting_array, array_size);
+                auto start = std::chrono::high_resolution_clock::now();
+                sys.run_sort(NUM_THREADS, sorting_array, array_size);
+                auto end = std::chrono::high_resolution_clock::now();
+                checker(sorting_array, array_size);
+                double execution_time = std::chrono::duration<double, std::milli>(end - start).count();
+
+                double achievable_performance = total_operations / (execution_time / 1000.0);
+
+                printf("CUDA,   execution time: %.5f ms (transfer: %.5f ms, %lld bytes)\n",
+                       execution_time, sys.data_transfer_time_ms, sys.data_transferred_bytes);
+                printf("CUDA,   achievable performance: %lf op/s\n", achievable_performance);
+                // method,input_size,num_threads,run_id,execution_time_ms,
+                // data_transfer_time,data_transferred_bytes,total_operations,achievable_performance
+                fprintf(fp, "cuda,%d,%d,%d,%lf,%lf,%lld,%d, %lf\n",
+                        array_size, 256 /* CUDA block size */, run_id, execution_time,
+                        sys.data_transfer_time_ms, sys.data_transferred_bytes,
+                        total_operations, achievable_performance);
+            }
+#endif
             free(sorting_array);
             free(base_array);
         }
