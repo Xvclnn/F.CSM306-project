@@ -7,16 +7,18 @@ import pandas as pd
 CSV_PATH = Path("csv/output.csv")
 OUTPUT_DIR = Path("output")
 
-METHOD_ORDER = ["serial", "threads", "openmp"]
+METHOD_ORDER = ["serial", "threads", "openmp", "cuda"]
 METHOD_LABELS = {
     "serial": "Serial",
     "threads": "std::thread",
     "openmp": "OpenMP",
+    "cuda": "CUDA",
 }
 METHOD_COLORS = {
     "serial": "#c0392b",
     "threads": "#2980b9",
     "openmp": "#27ae60",
+    "cuda": "#f39c12",
 }
 
 

@@ -6,8 +6,10 @@
 #include <cstring>
 #include <stdexcept>
 #include <cmath>
+#include <ctime>
 
 const int NUM_THREADS = 20;
+const int CUDA_THREADS_PER_BLOCK = 256;
 const int TOTAL_RUN = 10;
 
 // Жагсаалтыг бүрэн дараалал орсон эсэхийг шалгаж, хэрэв ороогүй байвал error заана.
@@ -101,7 +103,31 @@ int main() {
                 printf("OpenMP, execution time: %.5f ms\n", execution_time);
                 printf("OpenMP, achievable performance: %lf op/s\n", achievable_performance);
                 fprintf(fp, "openmp,%d,%d,%d,%lf,0,0,%d, %lf\n", array_size, NUM_THREADS, run_id, execution_time, total_operations, achievable_performance);
-            }        
+            }
+
+            // CUDA test hiine. Энд num_threads нь GPU-ийн нийт thread биш,
+            // нэг block доторх threads per block утга болно.
+            {
+                try {
+                    TaskSystemCUDA sys;
+                    reset_array(base_array, sorting_array, array_size);
+                    auto start = std::chrono::high_resolution_clock::now();
+                    sys.run_sort(CUDA_THREADS_PER_BLOCK, sorting_array, array_size);
+                    auto end = std::chrono::high_resolution_clock::now();
+                    checker(sorting_array, array_size);
+                    double execution_time = std::chrono::duration<double, std::milli>(end - start).count();
+
+                    double achievable_performance = total_operations / (execution_time / 1000.0);
+
+                    printf("CUDA, execution time: %.5f ms\n", execution_time);
+                    printf("CUDA, achievable performance: %lf op/s\n", achievable_performance);
+                    fprintf(fp, "cuda,%d,%d,%d,%lf,0,0,%d, %lf\n", array_size, CUDA_THREADS_PER_BLOCK, run_id, execution_time, total_operations, achievable_performance);
+                }
+                catch (const std::exception& error) {
+                    printf("CUDA benchmark алгасчээ: %s\n", error.what());
+                }
+            }
+
             free(sorting_array);
             free(base_array);
         }
