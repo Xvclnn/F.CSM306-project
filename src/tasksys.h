@@ -27,10 +27,3 @@ class TaskSystemOpenMP : public TaskSystem {
 public:
     void run_sort(int num_threads, float* array, int array_size) override;
 };
-
-#ifdef USE_CUDA
-class TaskSystemCUDA : public TaskSystem {
-public:
-    void run_sort(int num_threads, float* array, int array_size) override;
-};
-#endif

@@ -8,6 +8,7 @@
 
 const int NUM_THREADS = 20;
 
+// Жагсаалтыг бүрэн дараалал орсон эсэхийг шалгаж, хэрэв ороогүй байвал error заана.
 static void checker(float* array, int array_size){
     for(int i = 0; i<array_size-1; i++) {
         if (array_size <= 1) return;
@@ -23,11 +24,13 @@ static void checker(float* array, int array_size){
 int main() {
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     float random, result;
-
     FILE *fp = fopen("../csv/output.csv", "w+");
+
+    // csv файлын толгой мөрийг хэвлэх нь
     fprintf(fp, "method,input_size,num_threads,run_id,computation_time_ms,data_transfer_time_ms,execution_time_ms,speedup,total_operations,data_transferred_bytes,achievable_performance\n");
-    
-    int array_sizes[3] = {10000, 100000, 1000000};
+        
+    int array_sizes[3] = {10000, 100000, 1000000}; // тооцоолол хийх жагсаалтуудын хэмжээ
+
     for(int array_size : array_sizes){ 
         float* sorting_array = (float*)malloc(array_size * sizeof(float));
         float* base_array = (float*)malloc(array_size * sizeof(float));
@@ -37,9 +40,10 @@ int main() {
             result = 1.0f + random * (100.0f - 1.0f);
             base_array[i] = result;
         }
+        // Сая үүсгэсэн үндсэн жагсаалтыг одоо дараалалд оруулах гэж буй жагсаалтад хуулах
         memcpy(sorting_array, base_array, array_size * sizeof(float));
 
-        //Serial-n test
+        //Serial-n test hiine
         {
             TaskSystemSerial sys;
             reset_array(base_array, sorting_array, array_size);
@@ -50,7 +54,7 @@ int main() {
             long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         }
 
-        // std::thread test
+        // std::thread test hiine
         {
             TaskSystemThread sys;
             reset_array(base_array, sorting_array, array_size);
@@ -61,19 +65,18 @@ int main() {
             long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         }
 
-
-
-
-
-
-
-
-
-
-        
+        // openMP test hiine
+        {
+            TaskSystemOpenMP sys;
+            reset_array(base_array, sorting_array, array_size);
+            auto start = std::chrono::high_resolution_clock::now();
+            sys.run_sort(NUM_THREADS, sorting_array, array_size);
+            auto end = std::chrono::high_resolution_clock::now();
+            checker(sorting_array, array_size);
+            long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        }        
         free(sorting_array);
         free(base_array);
     }
-
     fclose(fp);
 }
