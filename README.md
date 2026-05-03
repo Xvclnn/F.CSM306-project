@@ -1,12 +1,12 @@
 # F.CSM306 Project
 
-Энэхүү төсөл нь `merge sort` алгоритмын гүйцэтгэлийг дараах 3 CPU хувилбараар харьцуулан хэмжих зорилготой:
+Энэхүү төсөл нь `merge sort` алгоритмын гүйцэтгэлийг дараах 3 CPU дээрх хувилбараар харьцуулан хэмжих зорилготой:
 
 - `serial`
 - `std::thread`
 - `OpenMP`
 
-Туршилтын үр дүнг `csv/output.csv` файлд хадгалж, дараа нь Python скриптээр уншин график болгон дүрсэлнэ.
+Туршилтын үр дүнг `csv/output.csv` файлд хадгалж, дараа нь Python (visualization/main.py)-аар график болгон дүрсэлнэ.
 
 ## Төслийн зорилго
 
@@ -15,7 +15,7 @@
 - `merge sort` алгоритмын энгийн дараалсан хувилбарыг хэрэгжүүлэх
 - `std::thread` ашиглан параллель хувилбар гаргах
 - `OpenMP` ашиглан ижил санааг өөр орчинд хэрэгжүүлэх
-- ижил оролт дээр 3 аргын хугацаа, speedup, achievable performance-ийг харьцуулах
+- ижил оролт дээр эдгээр 3 аргын хугацаа, speedup, achievable performance-ийг харьцуулах
 
 ## Ашигласан аргачлал
 
@@ -23,30 +23,30 @@
 
 - массивыг зүүн, баруун хоёр хэсэгт хуваана
 - хэсэг тус бүрийг рекурсив байдлаар эрэмбэлнэ
-- дараа нь `co-rank` санаа ашиглан merge үе шатыг параллельчилна
+- дараа нь `co-rank` алгоритм ашиглан merge үе шатыг параллельчилна
 
-`std::thread` болон `OpenMP` хоёрын ялгаа нь параллель ажлыг зохион байгуулж буй орчин юм. Харин үндсэн merge-ийн логик нь ижил чиглэлтэй.
+`std::thread` болон `OpenMP` хоёрын ялгаа нь параллель ажлыг зохион байгуулж буй орчин ба үндсэн merge-ийн логик нь ижил чиглэлтэй.
 
-## Хавтас, файлуудын бүтэц
+## Porject-н бүтэц
 
 - `src/main.cpp`
-  Бенчмарк ажиллуулж, хэмжилтүүдийг `csv/output.csv` файлд бичнэ.
+  Benchmark ажиллуулж, хэмжилтүүдийг `csv/output.csv` файлд бичнэ.
 - `src/tasksys.cpp`
   `serial`, `std::thread`, `OpenMP` хувилбаруудын хэрэгжүүлэлт.
 - `src/tasksys.h`
   Функц болон классуудын зарлал.
 - `src/itasksys.h`
-  Нийтлэг интерфэйс.
+  Интерфэйс.
 - `csv/output.csv`
-  Бенчмаркийн түүхий үр дүн.
+  Benchmark-н raw үр дүн.
 - `visualization/main.py`
-  CSV файлыг уншиж дундаж утгуудыг бодон график үүсгэнэ.
+  CSV файлыг уншиж, утгуудыг бодон график үүсгэнэ.
 - `output/`
   Үүсгэсэн зургууд хадгалагдах хавтас.
 
-## Хамаарал
+## Dependency
 
-### C++ тал
+### C++
 
 - `g++` эсвэл `clang++`
 - OpenMP дэмжлэг
@@ -57,7 +57,7 @@
 g++ -std=c++17 -O2 -fopenmp src/main.cpp src/tasksys.cpp -o benchmark
 ```
 
-### Python тал
+### Python
 
 - `python3`
 - `pandas`
@@ -66,37 +66,30 @@ g++ -std=c++17 -O2 -fopenmp src/main.cpp src/tasksys.cpp -o benchmark
 Суулгах бол:
 
 ```bash
-python3 -m pip install pandas matplotlib
+pip install pandas matplotlib
 ```
 
 ## Хэрхэн ажиллуулах вэ
 
-### 1. Бенчмарк програм compile хийх
-
-Төслийн root хавтсанд:
-
-```bash
-g++ -std=c++17 -O2 -fopenmp src/main.cpp src/tasksys.cpp -o benchmark
-```
-
-### 2. Бенчмарк ажиллуулах
+### 1. main.cpp ажиллуулах
 
 Одоогийн `main.cpp` нь `../csv/output.csv` зам руу бичиж байгаа тул програмыг `src/` хавтсаас ажиллуулах шаардлагатай.
 
 ```bash
 cd src
-../benchmark
+g++ -std=c++17 -O2 -fopenmp main.cpp tasksys.cpp -o main
+../main
 ```
 
 Энэ алхмын дараа `csv/output.csv` файл шинэчлэгдэнэ.
 
-### 3. График үүсгэх
+### 2. График үүсгэх
 
 Төслийн root хавтсанд буцаж ирээд:
 
 ```bash
 cd ..
-python3 visualization/main.py
+python visualization/main.py
 ```
 
 Үүний дараа дараах зургууд `output/` хавтсанд хадгалагдана:
@@ -123,9 +116,9 @@ python3 visualization/main.py
 - үр дүн зөв эсэхийг шалгана
 - хэмжилтүүдийг CSV файлд хадгална
 
-Ингэснээр нэг ижил оролт дээр аргуудыг шударгаар харьцуулах боломжтой.
+Ингэснээр нэг ижил оролт дээрх аргуудыг fair харьцуулах боломжтой.
 
-## CSV багануудын тайлбар
+## CSV column тайлбар
 
 `csv/output.csv` файлд дараах баганууд хадгалагдана:
 
@@ -140,20 +133,20 @@ python3 visualization/main.py
 - `execution_time_ms`
   Тухайн аргын ажилласан хугацаа миллисекундээр.
 - `data_transfer_time`
-  CPU хувилбаруудад `0`. GPU хувилбар нэмбэл ашиглаж болно.
+  GPU-ээс CPU-руу дата дамжуулахад зарцуулсан хугацаа. Дээрх 3 CPU аргачлалын хувилбаруудад `0`.
 - `data_transferred_bytes`
-  CPU хувилбаруудад `0`.
+  GPU-ээс CPU-руу дамжуулсан датаны хэмжээ. CPU хувилбаруудад `0`.
 - `total_operations`
   `merge sort`-ийн ажлын хэмжээг ойролцоолсон тооцоолол.
 - `achievable_performance`
-  `total_operations / execution_time_seconds` томьёогоор бодсон throughput.
+  `total_operations / execution_time_seconds` томьёогоор бодсон throughput утга. Operation per second.
 
 Анхаарах зүйл:
 
 - `speedup` нь CSV файлд шууд хадгалагдахгүй
-- `speedup`-ийг Python скрипт дундаж хугацаанаас бодно
+- `speedup`-ийг Python ашиглан дундаж хугацаанаас бодно
 
-## Python скрипт юу хийдэг вэ
+## Python юу хийдэг вэ
 
 `visualization/main.py` нь:
 
@@ -179,8 +172,6 @@ python3 visualization/main.py
 ```text
 speedup = average_serial_time / average_method_time
 ```
-
-Энд их утга нь сайн үзүүлэлт.
 
 ### 3. Achievable Performance
 
