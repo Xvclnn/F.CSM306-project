@@ -6,6 +6,8 @@
 #include <cstring>
 #include <stdexcept>
 
+const int NUM_THREADS = 20;
+
 static void checker(float* array, int array_size){
     for(int i = 0; i<array_size-1; i++) {
         if (array_size <= 1) return;
@@ -48,6 +50,16 @@ int main() {
             long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         }
 
+        // std::thread test
+        {
+            TaskSystemThread sys;
+            reset_array(base_array, sorting_array, array_size);
+            auto start = std::chrono::high_resolution_clock::now();
+            sys.run_sort(NUM_THREADS, sorting_array, array_size);
+            auto end = std::chrono::high_resolution_clock::now();
+            checker(sorting_array, array_size);
+            long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        }
 
 
 

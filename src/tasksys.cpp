@@ -12,7 +12,7 @@ void reset_array(float* base_array, float* sorting_array, int array_size){
 }
 
 // Хуваагдсан баруун зүүн хоёр жагсаалтыг авч буцаад merge хйинэ.
-static void merge_serial(float* leftArray, float* rightArray, float* array, int array_size){
+void merge_serial(float* leftArray, float* rightArray, float* array, int array_size){
     int leftArray_size = array_size/2;
     int rightArray_size = array_size - leftArray_size;
     int i=0, l=0, r=0;
@@ -69,8 +69,10 @@ void merge_sort_serial(float* array, int array_size) {
     free(rightArray);
 }
 
-
-static int co_rank(int k, float* leftArray, int leftArray_size, float* rightArray, int rightArray_size){
+// co-rank алгоритмыг ашиглаж i утгыг олно.
+// Энэхүү i утгаар дамжуулан зүүн болон баруун жагсаалтаас хэд хэдэн элемент авахыг тухайн урсгал 
+// мэдэх болно.
+int co_rank(int k, float* leftArray, int leftArray_size, float* rightArray, int rightArray_size){
     int low;
     if (k > rightArray_size) {
         low = k - rightArray_size;
@@ -104,19 +106,36 @@ static int co_rank(int k, float* leftArray, int leftArray_size, float* rightArra
     return low;
 }
 
-static void merge_corank_serial(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array){
+
+// Урсгал бүр дотроо serial ажиллана.
+void merge_corank_serial(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array){
     int i = 0, l = 0, r = 0;
     while (l < leftArray_size && r < rightArray_size){
-        if (leftArray[l] <= rightArray[r])
-            array[i++] = leftArray[l++];
-        else
-            array[i++] = rightArray[r++];
+        if (leftArray[l] <= rightArray[r]) {
+            array[i] = leftArray[l];
+            i++;
+            l++;
+        }
+        else {
+            array[i] = rightArray[r];
+            i++;
+            r++;
+        }
     }
-    while (l < leftArray_size)  array[i++] = leftArray[l++];
-    while (r < rightArray_size) array[i++] = rightArray[r++];
+    while (l < leftArray_size){
+        array[i] = leftArray[l];
+        i++;
+        l++;
+    }
+    while (r < rightArray_size){
+        array[i] = rightArray[r];
+        i++;
+        r++;
+    }
 }
-
-static void merge_parallel_corank(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array, int NUM_THREADS){
+ 
+// Урсгалуудыг үүсгэж ажлыг нь хийлгээд буцаад join хийнэ.
+void merge_parallel_corank(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array, int NUM_THREADS){
     int array_size = leftArray_size + rightArray_size;
     std::vector<std::thread> threads;
     threads.reserve(NUM_THREADS);
@@ -138,12 +157,14 @@ static void merge_parallel_corank(float* leftArray, int leftArray_size, float* r
     for (auto& th : threads) th.join();
 }
 
-static void merge_sort_parallel(float* array, int array_size, int NUM_THREADS){
+
+// Жагсаалтыг хоёр тэнцүү хэсэгт хуваана. Хэрэв жагсаалтын хэмжээ нь 10,000-аас доош болоод ирвэл
+// цааш нь serial дээрх алгоритмыг ажиллуулна. 
+void merge_sort_parallel(float* array, int array_size, int NUM_THREADS){
     if (array_size <= 10000 || NUM_THREADS <= 1){
         merge_sort_serial(array, array_size);
         return;
     }
-
     int leftArray_size  = array_size / 2;
     int rightArray_size = array_size - leftArray_size;
 
@@ -168,15 +189,81 @@ static void merge_sort_parallel(float* array, int array_size, int NUM_THREADS){
     free(rightArray);
 }
 
-// serial үйлдлийг хийнэ.
+// serial sort хийнэ.
 void TaskSystemSerial::run_sort(int NUM_THREADS, float* array, int array_size){
     merge_sort_serial(array, array_size);
 }
 
+//std::thread co-rank sort хийнэ.
 void TaskSystemThread::run_sort(int NUM_THREADS, float* array, int array_size){
     merge_sort_parallel(array, array_size, NUM_THREADS);
 }
 
+static void merge_parallel_corank_openmp(float* leftArray, int leftArray_size, float* rightArray, int rightArray_size, float* array, int NUM_THREADS){
+    int array_size = leftArray_size + rightArray_size;
+
+    #pragma omp taskgroup
+    {
+        for (int t = 0; t < NUM_THREADS; t++){
+            #pragma omp task firstprivate(t, array_size, leftArray_size, rightArray_size, NUM_THREADS) shared(leftArray, rightArray, array)
+            {
+                int k_start = t * array_size / NUM_THREADS;
+                int k_end = (t + 1) * array_size / NUM_THREADS;
+
+                int l_start = co_rank(k_start, leftArray, leftArray_size, rightArray, rightArray_size);
+                int r_start = k_start - l_start;
+
+                int l_end = co_rank(k_end, leftArray, leftArray_size, rightArray, rightArray_size);
+                int r_end = k_end - l_end;
+
+                merge_corank_serial(leftArray + l_start, l_end - l_start, rightArray + r_start, r_end - r_start, array + k_start);
+            }
+        }
+    }
+}
+
+static void merge_sort_parallel_openmp(float* array, int array_size, int NUM_THREADS){
+    if (array_size <= 10000 || NUM_THREADS <= 1){
+        merge_sort_serial(array, array_size);
+        return;
+    }
+
+    int leftArray_size  = array_size / 2;
+    int rightArray_size = array_size - leftArray_size;
+
+    float* leftArray = (float*)malloc(leftArray_size * sizeof(float));
+    float* rightArray = (float*)malloc(rightArray_size * sizeof(float));
+
+    memcpy(leftArray, array, leftArray_size * sizeof(float));
+    memcpy(rightArray, array + leftArray_size, rightArray_size * sizeof(float));
+
+    int left_threads  = NUM_THREADS / 2;
+    int right_threads = NUM_THREADS - left_threads;
+
+    #pragma omp taskgroup
+    {
+        #pragma omp task firstprivate(leftArray, leftArray_size, left_threads)
+        merge_sort_parallel_openmp(leftArray, leftArray_size, left_threads);
+
+        #pragma omp task firstprivate(rightArray, rightArray_size, right_threads)
+        merge_sort_parallel_openmp(rightArray, rightArray_size, right_threads);
+    }
+
+    merge_parallel_corank_openmp(leftArray, leftArray_size, rightArray, rightArray_size, array, NUM_THREADS);
+
+    free(leftArray);
+    free(rightArray);
+}
+
 void TaskSystemOpenMP::run_sort(int NUM_THREADS, float* array, int array_size){
-    // a code that does merge sorting in parallel using OpenMP
+    if (NUM_THREADS <= 1){
+        merge_sort_serial(array, array_size);
+        return;
+    }
+    omp_set_dynamic(0);
+    #pragma omp parallel num_threads(NUM_THREADS)
+    {
+        #pragma omp single
+        merge_sort_parallel_openmp(array, array_size, NUM_THREADS);
+    }
 }
