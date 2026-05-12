@@ -107,7 +107,7 @@ __device__ void merge_corank_serial_cuda(const float* left_array,
 }
 
 // ================================================================
-// Kernel 1: SMALL — Жижиг pair-уудад зориулсан (1 block = 1 pair)
+// Kernel 1: SMALL — Жижиг хос-уудад зориулсан (1 block = 1 хос)
 //
 // Зориулалт: Pair хэмжээ бага (≤ SIMPLE_PAIR_LIMIT) бөгөөд тоо нь
 // маш олон (мянга-аас сая) үед ашиглана. Эхний түвшинүүдэд
